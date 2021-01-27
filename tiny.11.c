@@ -14,6 +14,7 @@ void get_filetype(char *filename, char *filetype);
 void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 void clienterror(int fd, char *cause, char *errnum, 
 		 char *shortmsg, char *longmsg);
+void echo(int connfd);
 
 int main(int argc, char **argv) 
 {
@@ -36,6 +37,7 @@ int main(int argc, char **argv)
                     port, MAXLINE, 0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
 	doit(connfd);
+	//echo(connfd);
 	Close(connfd);
     }
 }
@@ -59,12 +61,11 @@ void doit(int fd)
         return;
     printf("%s", buf);
     sscanf(buf, "%s %s %s", method, uri, version);
-    if (!(strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0)) {
+    if (!(strcasecmp(method, "GET") || strcasecmp(method, "HEAD"))) {
         clienterror(fd, method, "501", "Not Implemented",
                     "Tiny does not implement this method");
         return;
     }
-    //Rio_writen(fd, buf, strlen(buf));
     read_requesthdrs(&rio);
 
     /* Parse URI from GET request */
@@ -103,12 +104,10 @@ void read_requesthdrs(rio_t *rp)
     char buf[MAXLINE];
 
     Rio_readlineb(rp, buf, MAXLINE);
-    //Rio_writen(rp->rio_fd, buf, strlen(buf));
     printf("%s", buf);
     while(strcmp(buf, "\r\n")) {
 	Rio_readlineb(rp, buf, MAXLINE);
 	printf("%s", buf);
-	//Rio_writen(rp->rio_fd, buf, strlen(buf));
     }
     return;
 }
@@ -128,11 +127,11 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
 	strcpy(filename, ".");
 	strcat(filename, uri);
 	if (uri[strlen(uri)-1] == '/')
-	    strcat(filename, "home.html");
+	    strcat(filename, "adder.html");
 	return 1;
     }
     else {  /* Dynamic content */
-	ptr = strchr(uri, '?');
+	ptr = index(uri, '?');
 	if (ptr) {
 	    strcpy(cgiargs, ptr+1);
 	    *ptr = '\0';
@@ -166,9 +165,9 @@ void serve_static(int fd, char *filename, int filesize, char *method)
     sprintf(buf, "Content-type: %s\r\n\r\n", filetype);
     Rio_writen(fd, buf, strlen(buf));
 
-    if (strcasecmp(method, "HEAD") == 0){
+    if (strcasecmp(method, "HEAD") == 0)
 	return;
-    }
+
     /* Send response body to client */
     srcfd = Open(filename, O_RDONLY, 0);
     srcp = (char *)malloc(filesize);
@@ -176,8 +175,6 @@ void serve_static(int fd, char *filename, int filesize, char *method)
     //srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
     Close(srcfd);
     Rio_writen(fd, srcp, filesize);
-    printf("%s", buf);
-    free(srcp);
     //Munmap(srcp, filesize);
 }
 
@@ -254,3 +251,24 @@ void clienterror(int fd, char *cause, char *errnum,
     Rio_writen(fd, buf, strlen(buf));
 }
 /* $end clienterror */
+
+/*
+ * echo - read and echo text lines until client closes connection
+ */
+/* $begin echo */
+
+void echo(int connfd) 
+{
+    size_t n; 
+    char buf[MAXLINE]; 
+    rio_t rio;
+
+    Rio_readinitb(&rio, connfd);
+    while((n = Rio_readlineb(&rio, buf, MAXLINE)) != 0) {
+	if (strcmp(buf, "\r\n") == 0)
+	    break;
+	Rio_writen(connfd, buf, n);
+    }
+}
+/* $end echo */
+
